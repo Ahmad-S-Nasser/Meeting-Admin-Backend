@@ -33,10 +33,15 @@ public class LiteDbContext : IDisposable
 
     public ILiteCollection<User> Users => _db.GetCollection<User>("users");
     public ILiteCollection<Organization> Organizations => _db.GetCollection<Organization>("organizations");
+    public ILiteCollection<PendingInvite> PendingInvites => _db.GetCollection<PendingInvite>("pendingInvites");
+    public ILiteCollection<MeetingJoinLink> MeetingJoinLinks => _db.GetCollection<MeetingJoinLink>("meetingJoinLinks");
 
     private void EnsureIndexes()
     {
         Users.EnsureIndex(u => u.Email, unique: true);
+        PendingInvites.EnsureIndex(i => i.TokenHash, unique: true);
+        MeetingJoinLinks.EnsureIndex(l => l.TokenHash, unique: true);
+        MeetingJoinLinks.EnsureIndex(l => l.MeetingId);
     }
 
     /// <summary>
@@ -51,6 +56,46 @@ public class LiteDbContext : IDisposable
         {
             Organizations.Insert(org);
             Users.Insert(user);
+            _db.Commit();
+        }
+        catch
+        {
+            _db.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Creates a new user, adds them to the invite's organization, and consumes the invite -
+    /// atomically, same reasoning as CreateUserAndOrganization: a partial write here would
+    /// leave either a user with no org membership or a member entry with no backing user.
+    /// </summary>
+    public void AcceptInviteForNewUser(User user, Organization org, PendingInvite invite)
+    {
+        _db.BeginTrans();
+        try
+        {
+            Users.Insert(user);
+            Organizations.Update(org);
+            PendingInvites.Delete(invite.Id);
+            _db.Commit();
+        }
+        catch
+        {
+            _db.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>Links an already-existing user to the invite's organization and consumes the invite - same atomicity reasoning.</summary>
+    public void AcceptInviteForExistingUser(User user, Organization org, PendingInvite invite)
+    {
+        _db.BeginTrans();
+        try
+        {
+            Users.Update(user);
+            Organizations.Update(org);
+            PendingInvites.Delete(invite.Id);
             _db.Commit();
         }
         catch

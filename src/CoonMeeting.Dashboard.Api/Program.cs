@@ -22,8 +22,13 @@ builder.Services.AddSingleton<LiteDbContext>();
 
 builder.Services.AddSingleton<IUserRepository, UserRepository>();
 builder.Services.AddSingleton<IOrganizationRepository, OrganizationRepository>();
+builder.Services.AddSingleton<IPendingInviteRepository, PendingInviteRepository>();
+builder.Services.AddSingleton<IMeetingJoinLinkRepository, MeetingJoinLinkRepository>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
+builder.Services.AddSingleton<IInviteTokenService, InviteTokenService>();
+builder.Services.AddSingleton<IInviteEmailSender, SmtpInviteEmailSender>();
+builder.Services.AddSingleton<IGuestJoinEmailSender, SmtpGuestJoinEmailSender>();
 
 // Capture startup errors so a missing secret returns a clean 500 instead of leaking a stack
 // trace - same convention as Coon.Meeting's own Program.cs for the same class of failure.
@@ -31,6 +36,7 @@ string? startupError = null;
 SessionSettings sessionSettings;
 CoonMeetingSettings coonMeetingSettings;
 FrontendSettings frontendSettings;
+SmtpSettings smtpSettings;
 
 try
 {
@@ -40,14 +46,18 @@ try
         ?? throw new InvalidOperationException("CoonMeeting settings not configured.");
     frontendSettings = builder.Configuration.GetSection("Frontend").Get<FrontendSettings>()
         ?? throw new InvalidOperationException("Frontend settings not configured.");
+    smtpSettings = builder.Configuration.GetSection("Smtp").Get<SmtpSettings>()
+        ?? throw new InvalidOperationException("Smtp settings not configured.");
 
     // A hardcoded default session-signing key would let anyone mint a valid session for any
     // user; failing to start is strictly better. The Coon.Meeting admin key is the same story
-    // one layer down - without it, signup can never provision a real tenant.
+    // one layer down - without it, signup can never provision a real tenant. Smtp:Password is
+    // required starting with Phase 2 - org invites now actually send email.
     RequireSecret(sessionSettings.SigningKey, "Session:SigningKey", "Session__SigningKey");
     RequireSecret(coonMeetingSettings.AdminProvisioningKey, "CoonMeeting:AdminProvisioningKey", "CoonMeeting__AdminProvisioningKey");
     RequireSecret(coonMeetingSettings.ApiBaseUrl, "CoonMeeting:ApiBaseUrl", "CoonMeeting__ApiBaseUrl"); // not a secret, but nothing here works without it either
     RequireSecret(frontendSettings.BaseUrl, "Frontend:BaseUrl", "Frontend__BaseUrl");
+    RequireSecret(smtpSettings.Password, "Smtp:Password", "Smtp__Password");
 
     static void RequireSecret(string value, string configKey, string envVar)
     {
@@ -66,11 +76,13 @@ catch (Exception ex)
     sessionSettings = new SessionSettings();
     coonMeetingSettings = new CoonMeetingSettings { ApiBaseUrl = "http://localhost" }; // HttpClient's BaseAddress rejects an empty/invalid URI
     frontendSettings = new FrontendSettings();
+    smtpSettings = new SmtpSettings();
 }
 
 builder.Services.AddSingleton(sessionSettings);
 builder.Services.AddSingleton(coonMeetingSettings);
 builder.Services.AddSingleton(frontendSettings);
+builder.Services.AddSingleton(smtpSettings);
 
 builder.Services.AddHttpClient<ICoonMeetingClient, CoonMeetingClient>();
 

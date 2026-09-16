@@ -10,6 +10,14 @@ public static class SessionContext
         user.FindFirstValue(JwtRegisteredClaimNames.Sub)
         ?? throw new InvalidOperationException("Request has no sub claim.");
 
+    public static string Email(ClaimsPrincipal user) =>
+        user.FindFirstValue("email")
+        ?? throw new InvalidOperationException("Request has no email claim.");
+
+    public static string Name(ClaimsPrincipal user) =>
+        user.FindFirstValue("name")
+        ?? throw new InvalidOperationException("Request has no name claim.");
+
     public static string OrganizationId(ClaimsPrincipal user) =>
         user.FindFirstValue("organizationId")
         ?? throw new InvalidOperationException("Request has no organizationId claim.");
