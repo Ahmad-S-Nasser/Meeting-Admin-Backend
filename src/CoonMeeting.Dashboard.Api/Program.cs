@@ -30,6 +30,9 @@ builder.Services.AddSingleton<IInviteTokenService, InviteTokenService>();
 builder.Services.AddSingleton<IInviteEmailSender, SmtpInviteEmailSender>();
 builder.Services.AddSingleton<IGuestJoinEmailSender, SmtpGuestJoinEmailSender>();
 
+var corsSettings = builder.Configuration.GetSection("Cors").Get<CorsSettings>() ?? new CorsSettings();
+builder.Services.AddSingleton(corsSettings);
+
 // Capture startup errors so a missing secret returns a clean 500 instead of leaking a stack
 // trace - same convention as Coon.Meeting's own Program.cs for the same class of failure.
 string? startupError = null;
@@ -85,6 +88,21 @@ builder.Services.AddSingleton(frontendSettings);
 builder.Services.AddSingleton(smtpSettings);
 
 builder.Services.AddHttpClient<ICoonMeetingClient, CoonMeetingClient>();
+
+// Static allow-list, not the dynamic per-tenant CORS Coon.Meeting itself uses - this API has
+// exactly one product's worth of browser callers (its own frontend, plus any standalone app
+// built on coon-meeting-sdk that calls the public /api/v1/guest endpoints directly), not many
+// integrators' worth.
+const string CorsPolicyName = "DashboardFrontends";
+var allowedOrigins = new[] { frontendSettings.BaseUrl }.Concat(corsSettings.Parse())
+    .Where(o => !string.IsNullOrWhiteSpace(o))
+    .Distinct()
+    .ToArray();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(CorsPolicyName, policy =>
+        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod());
+});
 
 builder.Services.AddAuthentication(DashboardSessionScheme.SchemeName)
     .AddJwtBearer(DashboardSessionScheme.SchemeName, options =>
@@ -154,6 +172,8 @@ app.Use(async (context, next) =>
 
     await next();
 });
+
+app.UseCors(CorsPolicyName);
 
 app.UseAuthentication();
 app.UseAuthorization();
