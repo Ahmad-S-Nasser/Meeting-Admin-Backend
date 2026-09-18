@@ -93,8 +93,14 @@ builder.Services.AddHttpClient<ICoonMeetingClient, CoonMeetingClient>();
 // exactly one product's worth of browser callers (its own frontend, plus any standalone app
 // built on coon-meeting-sdk that calls the public /api/v1/guest endpoints directly), not many
 // integrators' worth.
+//
+// Reads Frontend:BaseUrl straight from configuration rather than frontendSettings.BaseUrl - the
+// catch block below unconditionally resets frontendSettings to a blank instance whenever ANY
+// required secret is missing, even one unrelated to it (e.g. Session:SigningKey). Building the
+// CORS allow-list from the post-reset object meant a missing, unrelated secret silently dropped
+// the admin frontend's own origin from CORS too - exactly what broke signup in production.
 const string CorsPolicyName = "DashboardFrontends";
-var allowedOrigins = new[] { frontendSettings.BaseUrl }.Concat(corsSettings.Parse())
+var allowedOrigins = new[] { builder.Configuration["Frontend:BaseUrl"] ?? string.Empty }.Concat(corsSettings.Parse())
     .Where(o => !string.IsNullOrWhiteSpace(o))
     .Distinct()
     .ToArray();
@@ -160,6 +166,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Coon.Meeting Dashboard API v1"));
 }
 
+// CORS has to run before ANYTHING that can short-circuit the pipeline with its own response -
+// including the startup-error middleware right below. Otherwise a misconfigured deployment's
+// 500 goes out with no CORS headers at all, and the browser reports a CORS failure instead of
+// showing the real error - exactly what happened in production before this was reordered.
+app.UseCors(CorsPolicyName);
+
 // Startup Error Middleware - returns 500 for every request if a required secret was missing.
 app.Use(async (context, next) =>
 {
@@ -172,8 +184,6 @@ app.Use(async (context, next) =>
 
     await next();
 });
-
-app.UseCors(CorsPolicyName);
 
 app.UseAuthentication();
 app.UseAuthorization();
