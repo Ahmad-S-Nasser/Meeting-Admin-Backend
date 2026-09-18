@@ -101,7 +101,7 @@ public class MeetingJoinLinksController : ControllerBase
         var email = dto.Email.Trim().ToLowerInvariant();
         var externalId = MeetingsController.ResolveAttendeeExternalId(org!, email);
 
-        await _coonMeeting.AddAttendeeAsync(org.CoonMeetingApiKey, id, new CoonMeetingAttendeeRequest
+        await _coonMeeting.AddAttendeeAsync(org!.CoonMeetingApiKey, id, new CoonMeetingAttendeeRequest
         {
             ExternalId = externalId,
             Name = string.IsNullOrWhiteSpace(dto.Name) ? email : dto.Name,
