@@ -25,16 +25,36 @@ public class SmtpGuestJoinEmailSender : IGuestJoinEmailSender
         };
     }
 
-    public async Task SendGuestInviteAsync(string toEmail, string meetingTitle, string joinUrl)
+    public Task SendGuestInviteAsync(string toEmail, string organizationName, string meetingTitle, string joinUrl) =>
+        SendAsync(
+            toEmail,
+            $"{organizationName}: you're invited to \"{meetingTitle}\"",
+            "You're invited to a call",
+            organizationName,
+            meetingTitle,
+            joinUrl,
+            "Join the call");
+
+    public Task SendMemberInviteAsync(string toEmail, string organizationName, string meetingTitle, string meetingUrl) =>
+        SendAsync(
+            toEmail,
+            $"{organizationName}: new meeting \"{meetingTitle}\"",
+            "You've been added to a meeting",
+            organizationName,
+            meetingTitle,
+            meetingUrl,
+            "View meeting");
+
+    private async Task SendAsync(string toEmail, string subject, string heading, string organizationName, string meetingTitle, string url, string ctaLabel)
     {
         try
         {
             using var mail = new MailMessage
             {
                 From = new MailAddress(_fromAddress),
-                Subject = $"You're invited to join \"{meetingTitle}\"",
+                Subject = subject,
                 IsBodyHtml = true,
-                Body = BuildBody(meetingTitle, joinUrl),
+                Body = BuildBody(heading, organizationName, meetingTitle, url, ctaLabel),
             };
             mail.To.Add(toEmail);
 
@@ -43,16 +63,17 @@ public class SmtpGuestJoinEmailSender : IGuestJoinEmailSender
         catch (Exception ex)
         {
             // Never let invite delivery take down the write that already succeeded.
-            _logger.LogWarning(ex, "Failed to email guest join link to {Email}.", toEmail);
+            _logger.LogWarning(ex, "Failed to email meeting invite to {Email}.", toEmail);
         }
     }
 
-    private static string BuildBody(string meetingTitle, string joinUrl) => $@"
+    private static string BuildBody(string heading, string organizationName, string meetingTitle, string url, string ctaLabel) => $@"
         <div style=""font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 480px;"">
-            <h2 style=""color:#0f172a; margin-top:0; font-size:20px;"">You're invited to a call</h2>
+            <p style=""margin:0 0 4px 0; font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:#2ab7ca;"">{organizationName}</p>
+            <h2 style=""color:#0f172a; margin-top:0; font-size:20px;"">{heading}</h2>
             <div style=""background:#f1f5f9; border-left:4px solid #14b8a6; padding:16px; margin:24px 0;"">
                 <p style=""margin:0; font-weight:600; color:#0f172a;"">{meetingTitle}</p>
-                <p style=""margin:12px 0 0 0;""><a href=""{joinUrl}"">Join the call</a></p>
+                <p style=""margin:12px 0 0 0;""><a href=""{url}"">{ctaLabel}</a></p>
             </div>
         </div>";
 }

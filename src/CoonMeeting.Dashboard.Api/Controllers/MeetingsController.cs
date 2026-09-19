@@ -1,4 +1,5 @@
 using CoonMeeting.Dashboard.Api.Auth;
+using CoonMeeting.Dashboard.Api.Config;
 using CoonMeeting.Dashboard.Api.Models;
 using CoonMeeting.Dashboard.Api.Models.Dtos;
 using CoonMeeting.Dashboard.Api.Repositories;
@@ -17,11 +18,25 @@ public class MeetingsController : ControllerBase
 {
     private readonly IOrganizationRepository _orgs;
     private readonly ICoonMeetingClient _coonMeeting;
+    private readonly IMeetingJoinLinkRepository _links;
+    private readonly IInviteTokenService _tokens;
+    private readonly IGuestJoinEmailSender _email;
+    private readonly FrontendSettings _frontend;
 
-    public MeetingsController(IOrganizationRepository orgs, ICoonMeetingClient coonMeeting)
+    public MeetingsController(
+        IOrganizationRepository orgs,
+        ICoonMeetingClient coonMeeting,
+        IMeetingJoinLinkRepository links,
+        IInviteTokenService tokens,
+        IGuestJoinEmailSender email,
+        FrontendSettings frontend)
     {
         _orgs = orgs;
         _coonMeeting = coonMeeting;
+        _links = links;
+        _tokens = tokens;
+        _email = email;
+        _frontend = frontend;
     }
 
     // GET /api/v1/meetings
@@ -74,8 +89,80 @@ public class MeetingsController : ControllerBase
         };
 
         var meeting = await _coonMeeting.CreateMeetingAsync(org.CoonMeetingApiKey, request);
+        await InviteAttendeesAsync(org, meeting, dto.Attendees);
+
         return CreatedAtAction(nameof(GetById), new { id = meeting.Id }, ToDto(meeting, org, SessionContext.UserId(User)));
     }
+
+    /// <summary>Emails every attendee a working way into the meeting right away, instead of
+    /// leaving that as a manual "Invite someone" step the organizer has to remember to do
+    /// afterward, one address at a time. An org member gets a normal Dashboard link (their own
+    /// login gates it); anyone else gets a guest join link - the same links "Invite someone"
+    /// on the meeting detail page hands out, just triggered automatically at creation time.</summary>
+    private async Task InviteAttendeesAsync(Organization org, CoonMeetingMeeting meeting, List<CreateMeetingAttendeeRequestDto> attendees)
+    {
+        var organizerEmail = SessionContext.Email(User);
+
+        foreach (var attendee in attendees)
+        {
+            var email = attendee.Email.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(email) || string.Equals(email, organizerEmail, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var member = org.Members.FirstOrDefault(m => string.Equals(m.Email, email, StringComparison.OrdinalIgnoreCase));
+            if (member != null)
+            {
+                var meetingUrl = $"{_frontend.BaseUrl.TrimEnd('/')}/meetings/{meeting.Id}";
+                await _email.SendMemberInviteAsync(member.Email, org.Name, meeting.Title, meetingUrl);
+            }
+            else
+            {
+                var joinUrl = await GetOrCreateGuestJoinUrlAsync(org, meeting, email, attendee.Name);
+                await _email.SendGuestInviteAsync(email, org.Name, meeting.Title, joinUrl);
+            }
+        }
+    }
+
+    /// <summary>The attendee is already a verified Coon.Meeting attendee at this point (added by
+    /// the CreateMeetingAsync call above), so unlike MeetingJoinLinksController.CreateAttendeeLink
+    /// this only needs to mint the join-link token - no second AddAttendeeAsync call.</summary>
+    private async Task<string> GetOrCreateGuestJoinUrlAsync(Organization org, CoonMeetingMeeting meeting, string email, string? name)
+    {
+        if (string.Equals(meeting.Visibility, "Any", StringComparison.Ordinal))
+        {
+            var existing = await _links.GetActiveAnyLinkAsync(meeting.Id);
+            if (existing?.PlaintextToken != null) return BuildJoinUrl(existing.PlaintextToken);
+
+            var anyToken = _tokens.GenerateToken();
+            await _links.InsertAsync(new MeetingJoinLink
+            {
+                OrganizationId = org.Id,
+                MeetingId = meeting.Id,
+                TokenHash = _tokens.Hash(anyToken),
+                PlaintextToken = anyToken,
+                Scope = MeetingJoinLinkScope.Any,
+                CreatedByUserId = SessionContext.UserId(User),
+                ExpiresAt = null,
+            });
+            return BuildJoinUrl(anyToken);
+        }
+
+        var rawToken = _tokens.GenerateToken();
+        await _links.InsertAsync(new MeetingJoinLink
+        {
+            OrganizationId = org.Id,
+            MeetingId = meeting.Id,
+            TokenHash = _tokens.Hash(rawToken),
+            Scope = MeetingJoinLinkScope.Attendee,
+            ScopedEmail = email,
+            ScopedName = string.IsNullOrWhiteSpace(name) ? null : name,
+            CreatedByUserId = SessionContext.UserId(User),
+            ExpiresAt = DateTime.UtcNow.AddHours(24),
+        });
+        return BuildJoinUrl(rawToken);
+    }
+
+    private string BuildJoinUrl(string rawToken) => $"{_frontend.BaseUrl.TrimEnd('/')}/join/{rawToken}";
 
     // PUT /api/v1/meetings/{id}
     [HttpPut("{id}")]

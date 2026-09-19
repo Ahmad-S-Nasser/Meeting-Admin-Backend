@@ -123,7 +123,7 @@ public class MeetingJoinLinksController : ControllerBase
         await _links.InsertAsync(link);
 
         var url = BuildUrl(rawToken);
-        await _email.SendGuestInviteAsync(email, meeting.Title, url);
+        await _email.SendGuestInviteAsync(email, org.Name, meeting.Title, url);
 
         return Ok(new MeetingJoinLinkResponseDto { Url = url });
     }
