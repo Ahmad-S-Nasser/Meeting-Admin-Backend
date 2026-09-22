@@ -24,6 +24,7 @@ builder.Services.AddSingleton<IUserRepository, UserRepository>();
 builder.Services.AddSingleton<IOrganizationRepository, OrganizationRepository>();
 builder.Services.AddSingleton<IPendingInviteRepository, PendingInviteRepository>();
 builder.Services.AddSingleton<IMeetingJoinLinkRepository, MeetingJoinLinkRepository>();
+builder.Services.AddSingleton<IMeetingSettingsRepository, MeetingSettingsRepository>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<IInviteTokenService, InviteTokenService>();

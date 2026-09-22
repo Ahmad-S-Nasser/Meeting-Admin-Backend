@@ -19,11 +19,13 @@ public class CallController : ControllerBase
 {
     private readonly IOrganizationRepository _orgs;
     private readonly ICoonMeetingClient _coonMeeting;
+    private readonly IMeetingSettingsRepository _settings;
 
-    public CallController(IOrganizationRepository orgs, ICoonMeetingClient coonMeeting)
+    public CallController(IOrganizationRepository orgs, ICoonMeetingClient coonMeeting, IMeetingSettingsRepository settings)
     {
         _orgs = orgs;
         _coonMeeting = coonMeeting;
+        _settings = settings;
     }
 
     [HttpPost]
@@ -54,11 +56,16 @@ public class CallController : ControllerBase
 
         if (token == null) return NotFound();
 
+        var settings = await _settings.GetAsync(id);
+        var callerId = SessionContext.UserId(User);
+
         return Ok(new CallTokenResponseDto
         {
             Token = token.Token,
             ExpiresAt = token.ExpiresAt,
             MeetingId = token.MeetingId,
+            CanShareScreen = CallPermissionEvaluator.Evaluate(settings?.ScreenShare, meeting.CreatedByExternalId, callerId, isGuest: false),
+            CanRecord = CallPermissionEvaluator.Evaluate(settings?.Recording, meeting.CreatedByExternalId, callerId, isGuest: false),
         });
     }
 }

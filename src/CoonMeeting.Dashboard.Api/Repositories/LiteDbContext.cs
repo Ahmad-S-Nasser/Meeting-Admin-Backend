@@ -35,6 +35,7 @@ public class LiteDbContext : IDisposable
     public ILiteCollection<Organization> Organizations => _db.GetCollection<Organization>("organizations");
     public ILiteCollection<PendingInvite> PendingInvites => _db.GetCollection<PendingInvite>("pendingInvites");
     public ILiteCollection<MeetingJoinLink> MeetingJoinLinks => _db.GetCollection<MeetingJoinLink>("meetingJoinLinks");
+    public ILiteCollection<MeetingSettings> MeetingSettings => _db.GetCollection<MeetingSettings>("meetingSettings");
 
     private void EnsureIndexes()
     {

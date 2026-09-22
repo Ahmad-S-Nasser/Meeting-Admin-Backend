@@ -21,17 +21,20 @@ public class GuestController : ControllerBase
     private readonly IOrganizationRepository _orgs;
     private readonly ICoonMeetingClient _coonMeeting;
     private readonly IInviteTokenService _tokens;
+    private readonly IMeetingSettingsRepository _settings;
 
     public GuestController(
         IMeetingJoinLinkRepository links,
         IOrganizationRepository orgs,
         ICoonMeetingClient coonMeeting,
-        IInviteTokenService tokens)
+        IInviteTokenService tokens,
+        IMeetingSettingsRepository settings)
     {
         _links = links;
         _orgs = orgs;
         _coonMeeting = coonMeeting;
         _tokens = tokens;
+        _settings = settings;
     }
 
     // GET /api/v1/guest/join-links/{rawToken}
@@ -75,12 +78,19 @@ public class GuestController : ControllerBase
 
         if (token == null) return NotFound();
 
+        var settings = await _settings.GetAsync(link.MeetingId);
+        // Only an Any-link visitor has a random, unselectable id. A per-guest (Attendee) link
+        // resolves to a stable id - their email or org-member id - so they can be picked like anyone.
+        var anonymous = link.Scope == MeetingJoinLinkScope.Any;
+
         return Ok(new GuestJoinTokenResponseDto
         {
             Token = token.Token,
             ExpiresAt = token.ExpiresAt,
             MeetingId = token.MeetingId,
             ParticipantName = name,
+            CanShareScreen = CallPermissionEvaluator.Evaluate(settings?.ScreenShare, meeting!.CreatedByExternalId, participantExternalId, isGuest: anonymous),
+            CanRecord = CallPermissionEvaluator.Evaluate(settings?.Recording, meeting.CreatedByExternalId, participantExternalId, isGuest: anonymous),
         });
     }
 

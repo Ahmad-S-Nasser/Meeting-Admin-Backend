@@ -38,4 +38,9 @@ public class GuestJoinTokenResponseDto
     public DateTime ExpiresAt { get; set; }
     public string MeetingId { get; set; } = string.Empty;
     public string ParticipantName { get; set; } = string.Empty;
+
+    /// <summary>A guest gets these only when the meeting's policy is Everyone - a guest's id is
+    /// random per visit, so it can never be individually selected.</summary>
+    public bool CanShareScreen { get; set; }
+    public bool CanRecord { get; set; }
 }
